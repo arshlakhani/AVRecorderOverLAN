@@ -12,6 +12,7 @@ import subprocess
 import os
 from pynput import keyboard
 from flask import Flask, Response
+import audio_processing as audio_Rec
 
 a_pressed = False
 global flask_thread
@@ -53,6 +54,42 @@ def video_feed():
         return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
     else: 
         'None'
+
+def generateAudio():
+    """Audio streaming generator function."""
+    currChunk = audioRec.record()
+    data_to_stream = genHeader(44100, 32, 1, 200000) + currChunk
+    yield data_to_stream
+
+    # with open("signals/audio.wav", "rb") as fwav:
+    #     data = fwav.read(1024)
+    #     while data:
+    #         yield data
+    #         data = fwav.read(1024)
+
+
+def genHeader(sampleRate, bitsPerSample, channels, samples):
+    datasize = samples * channels * bitsPerSample // 8
+    o = bytes("RIFF",'ascii')                                               # (4byte) Marks file as RIFF
+    o += (datasize + 36).to_bytes(4,'little')                               # (4byte) File size in bytes excluding this and RIFF marker
+    o += bytes("WAVE",'ascii')                                              # (4byte) File type
+    o += bytes("fmt ",'ascii')                                              # (4byte) Format Chunk Marker
+    o += (16).to_bytes(4,'little')                                          # (4byte) Length of above format data
+    o += (1).to_bytes(2,'little')                                           # (2byte) Format type (1 - PCM)
+    o += (channels).to_bytes(2,'little')                                    # (2byte)
+    o += (sampleRate).to_bytes(4,'little')                                  # (4byte)
+    o += (sampleRate * channels * bitsPerSample // 8).to_bytes(4,'little')  # (4byte)
+    o += (channels * bitsPerSample // 8).to_bytes(2,'little')               # (2byte)
+    o += (bitsPerSample).to_bytes(2,'little')                               # (2byte)
+    o += bytes("data",'ascii')                                              # (4byte) Data Chunk Marker
+    o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
+    return o
+@app.route("/audio_feed")
+def audio_feed():
+    """Audio streaming route. Put this in the src attribute of an audio tag."""
+    return Response(generateAudio(),
+                    mimetype="audio/x-wav")
+
 
 @app.route('/')
 def index():
