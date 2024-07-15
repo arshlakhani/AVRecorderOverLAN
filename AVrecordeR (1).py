@@ -11,21 +11,27 @@ import time
 import subprocess
 import os
 from pynput import keyboard
-from flask import Flask, Response
-import audio_processing as audio_Rec
+from flask import Flask, Response, render_template
 
 a_pressed = False
 global flask_thread
 flask_thread = None
 
+FORMAT = pyaudio.paInt16
+CHANNELS = 2
+RATE = 44100
+CHUNK = 1024
+RECORD_SECONDS = 5
+
+audio1 = pyaudio.PyAudio()
 
 def get_next_filename(directory, base_name, extension):
     files = os.listdir(directory)
     matching_files = [f for f in files if f.startswith(base_name) and f.endswith(extension)]
-    
+
     if not matching_files:
         return f"{base_name}_1{extension}"
-    
+
     numbers = [int(f[len(base_name)+1:-len(extension)]) for f in matching_files if f[len(base_name)+1:-len(extension)].isdigit()]
     next_number = max(numbers) + 1 if numbers else 1
     return f"{base_name}_{next_number}{extension}"
@@ -36,7 +42,7 @@ def gen_frames():
     camera = cv2.VideoCapture(0)  # use 0 for web camera
     camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-    
+
     while True:
         success, frame = camera.read()  # read the camera frame
         if not success:
@@ -54,42 +60,6 @@ def video_feed():
         return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
     else: 
         'None'
-
-def generateAudio():
-    """Audio streaming generator function."""
-    currChunk = audioRec.record()
-    data_to_stream = genHeader(44100, 32, 1, 200000) + currChunk
-    yield data_to_stream
-
-    # with open("signals/audio.wav", "rb") as fwav:
-    #     data = fwav.read(1024)
-    #     while data:
-    #         yield data
-    #         data = fwav.read(1024)
-
-
-def genHeader(sampleRate, bitsPerSample, channels, samples):
-    datasize = samples * channels * bitsPerSample // 8
-    o = bytes("RIFF",'ascii')                                               # (4byte) Marks file as RIFF
-    o += (datasize + 36).to_bytes(4,'little')                               # (4byte) File size in bytes excluding this and RIFF marker
-    o += bytes("WAVE",'ascii')                                              # (4byte) File type
-    o += bytes("fmt ",'ascii')                                              # (4byte) Format Chunk Marker
-    o += (16).to_bytes(4,'little')                                          # (4byte) Length of above format data
-    o += (1).to_bytes(2,'little')                                           # (2byte) Format type (1 - PCM)
-    o += (channels).to_bytes(2,'little')                                    # (2byte)
-    o += (sampleRate).to_bytes(4,'little')                                  # (4byte)
-    o += (sampleRate * channels * bitsPerSample // 8).to_bytes(4,'little')  # (4byte)
-    o += (channels * bitsPerSample // 8).to_bytes(2,'little')               # (2byte)
-    o += (bitsPerSample).to_bytes(2,'little')                               # (2byte)
-    o += bytes("data",'ascii')                                              # (4byte) Data Chunk Marker
-    o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
-    return o
-@app.route("/audio_feed")
-def audio_feed():
-    """Audio streaming route. Put this in the src attribute of an audio tag."""
-    return Response(generateAudio(),
-                    mimetype="audio/x-wav")
-
 
 @app.route('/')
 def index():
@@ -124,7 +94,7 @@ class VideoRecorder():
         self.video_out = cv2.VideoWriter(self.video_filename, self.fourcc, self.fps, self.frameSize)  # Correct initialization
         self.frame_counts = 1
         self.start_time = time.time()
-    
+
     def record(self):
         "Video starts being recorded"
         while self.open:
@@ -134,7 +104,7 @@ class VideoRecorder():
                 self.frame_counts += 1
             else:
                 break
-    
+
     def stop(self):
         "Finishes the video recording therefore the thread too"
         if self.open:
@@ -142,11 +112,59 @@ class VideoRecorder():
             self.video_out.release()
             self.video_cap.release()
             cv2.destroyAllWindows()
-    
+
     def start(self):
         "Launches the video recording function using a thread"
         video_thread = threading.Thread(target=self.record)
         video_thread.start()
+def genHeader(sampleRate, bitsPerSample, channels):
+    datasize = 2000*10**6
+    o = bytes("RIFF",'ascii')                                               # (4byte) Marks file as RIFF
+    o += (datasize + 36).to_bytes(4,'little')                               # (4byte) File size in bytes excluding this and RIFF marker
+    o += bytes("WAVE",'ascii')                                              # (4byte) File type
+    o += bytes("fmt ",'ascii')                                              # (4byte) Format Chunk Marker
+    o += (16).to_bytes(4,'little')                                          # (4byte) Length of above format data
+    o += (1).to_bytes(2,'little')                                           # (2byte) Format type (1 - PCM)
+    o += (channels).to_bytes(2,'little')                                    # (2byte)
+    o += (sampleRate).to_bytes(4,'little')                                  # (4byte)
+    o += (sampleRate * channels * bitsPerSample // 8).to_bytes(4,'little')  # (4byte)
+    o += (channels * bitsPerSample // 8).to_bytes(2,'little')               # (2byte)
+    o += (bitsPerSample).to_bytes(2,'little')                               # (2byte)
+    o += bytes("data",'ascii')                                              # (4byte) Data Chunk Marker
+    o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
+    return o
+
+@app.route('/audio')
+def audio():
+    # start Recording
+    def sound():
+
+        CHUNK = 1024
+        sampleRate = 44100
+        bitsPerSample = 16
+        channels = 2
+        wav_header = genHeader(sampleRate, bitsPerSample, channels)
+
+        stream = audio1.open(format=FORMAT, channels=CHANNELS,
+                        rate=RATE, input=True,input_device_index=1,
+                        frames_per_buffer=CHUNK)
+        print("recording...")
+        #frames = []
+        first_run = True
+        while True:
+           if first_run:
+               data = wav_header + stream.read(CHUNK)
+               first_run = False
+           else:
+               data = stream.read(CHUNK)
+           yield(data)
+
+    return Response(sound())
+
+@app.route('/index ')
+def index():
+    """Video streaming home page."""
+    return render_template('index.html')
 
 class AudioRecorder():
     "Audio class based on pyAudio and Wave"
@@ -164,14 +182,14 @@ class AudioRecorder():
                                       input=True,
                                       frames_per_buffer=self.frames_per_buffer)
         self.audio_frames = []
-    
+
     def record(self):
         "Audio starts being recorded"
         self.stream.start_stream()
         while self.open:
             data = self.stream.read(self.frames_per_buffer) 
             self.audio_frames.append(data)
-    
+
     def stop(self):
         "Finishes the audio recording therefore the thread too"
         if self.open:
@@ -185,7 +203,7 @@ class AudioRecorder():
             waveFile.setframerate(self.rate)
             waveFile.writeframes(b''.join(self.audio_frames))
             waveFile.close()
-    
+
     def start(self):
         "Launches the audio recording function using a thread"
         audio_thread = threading.Thread(target=self.record)
@@ -250,7 +268,7 @@ if __name__ == '__main__':
     listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     listener.start()
     count = 0
-    
+
     try:
         while True:
             if a_pressed:  # Check if 'a' key is pressed
