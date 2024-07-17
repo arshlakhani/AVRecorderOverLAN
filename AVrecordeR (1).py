@@ -14,7 +14,6 @@ from pynput import keyboard
 from flask import Flask, Response, render_template
 
 a_pressed = False
-global flask_thread
 flask_thread = None
 
 FORMAT = pyaudio.paInt16
@@ -52,14 +51,14 @@ def gen_frames():
             frame = buffer.tobytes()
             if a_pressed:
                 yield (b'--frame\r\n'
-                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')  # concat frame one by one and show result
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')  # concat frame one by one and show result
 
 @app.route('/video_feed')
 def video_feed():
     if a_pressed:
         return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
     else: 
-        'None'
+        return 'None'
 
 @app.route('/')
 def index():
@@ -86,12 +85,12 @@ class VideoRecorder():
     def __init__(self, name="temp_video.avi", fourcc="MJPG", sizex=640, sizey=480, camindex=0, fps=30):
         self.open = True
         self.device_index = camindex
-        self.fps = fps                  # fps should be the minimum constant rate at which the camera can
-        self.fourcc = cv2.VideoWriter_fourcc(*fourcc)  # Correct usage of fourcc
-        self.frameSize = (sizex, sizey) # video formats and sizes also depend and vary according to the camera used
+        self.fps = fps
+        self.fourcc = cv2.VideoWriter_fourcc(*fourcc)
+        self.frameSize = (sizex, sizey)
         self.video_filename = name
         self.video_cap = cv2.VideoCapture(self.device_index)
-        self.video_out = cv2.VideoWriter(self.video_filename, self.fourcc, self.fps, self.frameSize)  # Correct initialization
+        self.video_out = cv2.VideoWriter(self.video_filename, self.fourcc, self.fps, self.frameSize)
         self.frame_counts = 1
         self.start_time = time.time()
 
@@ -117,28 +116,28 @@ class VideoRecorder():
         "Launches the video recording function using a thread"
         video_thread = threading.Thread(target=self.record)
         video_thread.start()
+
 def genHeader(sampleRate, bitsPerSample, channels):
-    datasize = 2000*10**6
-    o = bytes("RIFF",'ascii')                                               # (4byte) Marks file as RIFF
-    o += (datasize + 36).to_bytes(4,'little')                               # (4byte) File size in bytes excluding this and RIFF marker
-    o += bytes("WAVE",'ascii')                                              # (4byte) File type
-    o += bytes("fmt ",'ascii')                                              # (4byte) Format Chunk Marker
-    o += (16).to_bytes(4,'little')                                          # (4byte) Length of above format data
-    o += (1).to_bytes(2,'little')                                           # (2byte) Format type (1 - PCM)
-    o += (channels).to_bytes(2,'little')                                    # (2byte)
-    o += (sampleRate).to_bytes(4,'little')                                  # (4byte)
-    o += (sampleRate * channels * bitsPerSample // 8).to_bytes(4,'little')  # (4byte)
-    o += (channels * bitsPerSample // 8).to_bytes(2,'little')               # (2byte)
-    o += (bitsPerSample).to_bytes(2,'little')                               # (2byte)
-    o += bytes("data",'ascii')                                              # (4byte) Data Chunk Marker
-    o += (datasize).to_bytes(4,'little')                                    # (4byte) Data size in bytes
+    datasize = 2000 * 10**6
+    o = bytes("RIFF", 'ascii')                                               # (4byte) Marks file as RIFF
+    o += (datasize + 36).to_bytes(4, 'little')                               # (4byte) File size in bytes excluding this and RIFF marker
+    o += bytes("WAVE", 'ascii')                                              # (4byte) File type
+    o += bytes("fmt ", 'ascii')                                              # (4byte) Format Chunk Marker
+    o += (16).to_bytes(4, 'little')                                          # (4byte) Length of above format data
+    o += (1).to_bytes(2, 'little')                                           # (2byte) Format type (1 - PCM)
+    o += (channels).to_bytes(2, 'little')                                    # (2byte)
+    o += (sampleRate).to_bytes(4, 'little')                                  # (4byte)
+    o += (sampleRate * channels * bitsPerSample // 8).to_bytes(4, 'little')  # (4byte)
+    o += (channels * bitsPerSample // 8).to_bytes(2, 'little')               # (2byte)
+    o += (bitsPerSample).to_bytes(2, 'little')                               # (2byte)
+    o += bytes("data", 'ascii')                                              # (4byte) Data Chunk Marker
+    o += (datasize).to_bytes(4, 'little')                                    # (4byte) Data size in bytes
     return o
 
 @app.route('/audio')
 def audio():
     # start Recording
     def sound():
-
         CHUNK = 1024
         sampleRate = 44100
         bitsPerSample = 16
@@ -146,23 +145,22 @@ def audio():
         wav_header = genHeader(sampleRate, bitsPerSample, channels)
 
         stream = audio1.open(format=FORMAT, channels=CHANNELS,
-                        rate=RATE, input=True,input_device_index=1,
-                        frames_per_buffer=CHUNK)
+                             rate=RATE, input=True, input_device_index=1,
+                             frames_per_buffer=CHUNK)
         print("recording...")
-        #frames = []
         first_run = True
         while True:
-           if first_run:
-               data = wav_header + stream.read(CHUNK)
-               first_run = False
-           else:
-               data = stream.read(CHUNK)
-           yield(data)
+            if first_run:
+                data = wav_header + stream.read(CHUNK)
+                first_run = False
+            else:
+                data = stream.read(CHUNK)
+            yield data
 
     return Response(sound())
 
-@app.route('/index ')
-def index():
+@app.route('/index')
+def index_page():
     """Video streaming home page."""
     return render_template('index.html')
 
