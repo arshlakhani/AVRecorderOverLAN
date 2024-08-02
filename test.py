@@ -59,8 +59,8 @@ def audio():
 
     return Response(sound())
 
-@app.route('/')
-def index():
+@app.route('/audio')
+def audio():
     """Video streaming home page."""
     return render_template('index.html')
 
